@@ -20,6 +20,8 @@
 #define GREEN_c(x) (((x) >> G_SHIFT) & MASK)
 #define BLUE_c(x) ((x) & MASK)
 
+#define FOOBAR(a) ((a) & ((1 << (sizeof(comp1_t) * 8)) - 1))
+
 /*
  * Helper macros.
  */
@@ -32,7 +34,7 @@
 
 #define ADD_UNc(x, y, t)				     \
     ((t) = (x) + (y),					     \
-     (comp4_t) (comp1_t) ((t) | (0 - ((t) >> G_SHIFT))))
+     (comp4_t) FOOBAR ((t) | (0 - ((t) >> G_SHIFT))))
 
 #define DIV_ONE_UNc(x)							\
     (((x) + ONE_HALF + (((x) + ONE_HALF) >> G_SHIFT)) >> G_SHIFT)

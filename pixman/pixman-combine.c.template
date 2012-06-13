@@ -1234,16 +1234,16 @@ combine_conjoint_in_part (comp1_t a, comp1_t b)
     return DIV_UNc (b, a);     /* b/a */
 }
 
-#define GET_COMP(v, i)   ((comp2_t) (comp1_t) ((v) >> i))
+#define GET_COMP(v, i)   ((comp2_t) FOOBAR ((v) >> i))
 
 #define ADD(x, y, i, t)							\
     ((t) = GET_COMP (x, i) + GET_COMP (y, i),				\
-     (comp4_t) ((comp1_t) ((t) | (0 - ((t) >> G_SHIFT)))) << (i))
+     (comp4_t) (FOOBAR ((t) | (0 - ((t) >> G_SHIFT)))) << (i))
 
 #define GENERIC(x, y, i, ax, ay, t, u, v)				\
     ((t) = (MUL_UNc (GET_COMP (y, i), ay, (u)) +			\
             MUL_UNc (GET_COMP (x, i), ax, (v))),			\
-     (comp4_t) ((comp1_t) ((t) |					\
+     (comp4_t) (FOOBAR ((t) |					\
                            (0 - ((t) >> G_SHIFT)))) << (i))
 
 static void
@@ -1998,18 +1998,18 @@ combine_disjoint_general_ca (comp4_t *      dest,
 	    break;
 
 	case COMBINE_A_OUT:
-	    m = (comp4_t)combine_disjoint_out_part ((comp1_t) (sa >> 0), da);
-	    n = (comp4_t)combine_disjoint_out_part ((comp1_t) (sa >> G_SHIFT), da) << G_SHIFT;
-	    o = (comp4_t)combine_disjoint_out_part ((comp1_t) (sa >> R_SHIFT), da) << R_SHIFT;
-	    p = (comp4_t)combine_disjoint_out_part ((comp1_t) (sa >> A_SHIFT), da) << A_SHIFT;
+	    m = (comp4_t)combine_disjoint_out_part (FOOBAR (sa >> 0), da);
+	    n = (comp4_t)combine_disjoint_out_part (FOOBAR (sa >> G_SHIFT), da) << G_SHIFT;
+	    o = (comp4_t)combine_disjoint_out_part (FOOBAR (sa >> R_SHIFT), da) << R_SHIFT;
+	    p = (comp4_t)combine_disjoint_out_part (FOOBAR (sa >> A_SHIFT), da) << A_SHIFT;
 	    Fa = m | n | o | p;
 	    break;
 
 	case COMBINE_A_IN:
-	    m = (comp4_t)combine_disjoint_in_part ((comp1_t) (sa >> 0), da);
-	    n = (comp4_t)combine_disjoint_in_part ((comp1_t) (sa >> G_SHIFT), da) << G_SHIFT;
-	    o = (comp4_t)combine_disjoint_in_part ((comp1_t) (sa >> R_SHIFT), da) << R_SHIFT;
-	    p = (comp4_t)combine_disjoint_in_part ((comp1_t) (sa >> A_SHIFT), da) << A_SHIFT;
+	    m = (comp4_t)combine_disjoint_in_part (FOOBAR (sa >> 0), da);
+	    n = (comp4_t)combine_disjoint_in_part (FOOBAR (sa >> G_SHIFT), da) << G_SHIFT;
+	    o = (comp4_t)combine_disjoint_in_part (FOOBAR (sa >> R_SHIFT), da) << R_SHIFT;
+	    p = (comp4_t)combine_disjoint_in_part (FOOBAR (sa >> A_SHIFT), da) << A_SHIFT;
 	    Fa = m | n | o | p;
 	    break;
 
@@ -2025,18 +2025,18 @@ combine_disjoint_general_ca (comp4_t *      dest,
 	    break;
 
 	case COMBINE_B_OUT:
-	    m = (comp4_t)combine_disjoint_out_part (da, (comp1_t) (sa >> 0));
-	    n = (comp4_t)combine_disjoint_out_part (da, (comp1_t) (sa >> G_SHIFT)) << G_SHIFT;
-	    o = (comp4_t)combine_disjoint_out_part (da, (comp1_t) (sa >> R_SHIFT)) << R_SHIFT;
-	    p = (comp4_t)combine_disjoint_out_part (da, (comp1_t) (sa >> A_SHIFT)) << A_SHIFT;
+	    m = (comp4_t)combine_disjoint_out_part (da, FOOBAR (sa >> 0));
+	    n = (comp4_t)combine_disjoint_out_part (da, FOOBAR (sa >> G_SHIFT)) << G_SHIFT;
+	    o = (comp4_t)combine_disjoint_out_part (da, FOOBAR (sa >> R_SHIFT)) << R_SHIFT;
+	    p = (comp4_t)combine_disjoint_out_part (da, FOOBAR (sa >> A_SHIFT)) << A_SHIFT;
 	    Fb = m | n | o | p;
 	    break;
 
 	case COMBINE_B_IN:
-	    m = (comp4_t)combine_disjoint_in_part (da, (comp1_t) (sa >> 0));
-	    n = (comp4_t)combine_disjoint_in_part (da, (comp1_t) (sa >> G_SHIFT)) << G_SHIFT;
-	    o = (comp4_t)combine_disjoint_in_part (da, (comp1_t) (sa >> R_SHIFT)) << R_SHIFT;
-	    p = (comp4_t)combine_disjoint_in_part (da, (comp1_t) (sa >> A_SHIFT)) << A_SHIFT;
+	    m = (comp4_t)combine_disjoint_in_part (da, FOOBAR (sa >> 0));
+	    n = (comp4_t)combine_disjoint_in_part (da, FOOBAR (sa >> G_SHIFT)) << G_SHIFT;
+	    o = (comp4_t)combine_disjoint_in_part (da, FOOBAR (sa >> R_SHIFT)) << R_SHIFT;
+	    p = (comp4_t)combine_disjoint_in_part (da, FOOBAR (sa >> A_SHIFT)) << A_SHIFT;
 	    Fb = m | n | o | p;
 	    break;
 
@@ -2177,18 +2177,18 @@ combine_conjoint_general_ca (comp4_t *      dest,
 	    break;
 
 	case COMBINE_A_OUT:
-	    m = (comp4_t)combine_conjoint_out_part ((comp1_t) (sa >> 0), da);
-	    n = (comp4_t)combine_conjoint_out_part ((comp1_t) (sa >> G_SHIFT), da) << G_SHIFT;
-	    o = (comp4_t)combine_conjoint_out_part ((comp1_t) (sa >> R_SHIFT), da) << R_SHIFT;
-	    p = (comp4_t)combine_conjoint_out_part ((comp1_t) (sa >> A_SHIFT), da) << A_SHIFT;
+	    m = (comp4_t)combine_conjoint_out_part (FOOBAR (sa >> 0), da);
+	    n = (comp4_t)combine_conjoint_out_part (FOOBAR (sa >> G_SHIFT), da) << G_SHIFT;
+	    o = (comp4_t)combine_conjoint_out_part (FOOBAR (sa >> R_SHIFT), da) << R_SHIFT;
+	    p = (comp4_t)combine_conjoint_out_part (FOOBAR (sa >> A_SHIFT), da) << A_SHIFT;
 	    Fa = m | n | o | p;
 	    break;
 
 	case COMBINE_A_IN:
-	    m = (comp4_t)combine_conjoint_in_part ((comp1_t) (sa >> 0), da);
-	    n = (comp4_t)combine_conjoint_in_part ((comp1_t) (sa >> G_SHIFT), da) << G_SHIFT;
-	    o = (comp4_t)combine_conjoint_in_part ((comp1_t) (sa >> R_SHIFT), da) << R_SHIFT;
-	    p = (comp4_t)combine_conjoint_in_part ((comp1_t) (sa >> A_SHIFT), da) << A_SHIFT;
+	    m = (comp4_t)combine_conjoint_in_part (FOOBAR (sa >> 0), da);
+	    n = (comp4_t)combine_conjoint_in_part (FOOBAR (sa >> G_SHIFT), da) << G_SHIFT;
+	    o = (comp4_t)combine_conjoint_in_part (FOOBAR (sa >> R_SHIFT), da) << R_SHIFT;
+	    p = (comp4_t)combine_conjoint_in_part (FOOBAR (sa >> A_SHIFT), da) << A_SHIFT;
 	    Fa = m | n | o | p;
 	    break;
 
@@ -2204,18 +2204,18 @@ combine_conjoint_general_ca (comp4_t *      dest,
 	    break;
 
 	case COMBINE_B_OUT:
-	    m = (comp4_t)combine_conjoint_out_part (da, (comp1_t) (sa >> 0));
-	    n = (comp4_t)combine_conjoint_out_part (da, (comp1_t) (sa >> G_SHIFT)) << G_SHIFT;
-	    o = (comp4_t)combine_conjoint_out_part (da, (comp1_t) (sa >> R_SHIFT)) << R_SHIFT;
-	    p = (comp4_t)combine_conjoint_out_part (da, (comp1_t) (sa >> A_SHIFT)) << A_SHIFT;
+	    m = (comp4_t)combine_conjoint_out_part (da, FOOBAR (sa >> 0));
+	    n = (comp4_t)combine_conjoint_out_part (da, FOOBAR (sa >> G_SHIFT)) << G_SHIFT;
+	    o = (comp4_t)combine_conjoint_out_part (da, FOOBAR (sa >> R_SHIFT)) << R_SHIFT;
+	    p = (comp4_t)combine_conjoint_out_part (da, FOOBAR (sa >> A_SHIFT)) << A_SHIFT;
 	    Fb = m | n | o | p;
 	    break;
 
 	case COMBINE_B_IN:
-	    m = (comp4_t)combine_conjoint_in_part (da, (comp1_t) (sa >> 0));
-	    n = (comp4_t)combine_conjoint_in_part (da, (comp1_t) (sa >> G_SHIFT)) << G_SHIFT;
-	    o = (comp4_t)combine_conjoint_in_part (da, (comp1_t) (sa >> R_SHIFT)) << R_SHIFT;
-	    p = (comp4_t)combine_conjoint_in_part (da, (comp1_t) (sa >> A_SHIFT)) << A_SHIFT;
+	    m = (comp4_t)combine_conjoint_in_part (da, FOOBAR (sa >> 0));
+	    n = (comp4_t)combine_conjoint_in_part (da, FOOBAR (sa >> G_SHIFT)) << G_SHIFT;
+	    o = (comp4_t)combine_conjoint_in_part (da, FOOBAR (sa >> R_SHIFT)) << R_SHIFT;
+	    p = (comp4_t)combine_conjoint_in_part (da, FOOBAR (sa >> A_SHIFT)) << A_SHIFT;
 	    Fb = m | n | o | p;
 	    break;
 

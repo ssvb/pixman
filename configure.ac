@@ -865,6 +865,9 @@ AC_CACHE_VAL(ac_cv_tls, [
 #ifdef __OpenBSD__
 #error OpenBSD has broken __thread support
 #endif
+#ifdef __PATHCC__
+#error Path64 has broken __thread support: https://github.com/path64/compiler/issues/142
+#endif
 
 int $kw test;], [], ac_cv_tls=$kw)
     done

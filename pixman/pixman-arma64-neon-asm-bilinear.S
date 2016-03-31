@@ -55,18 +55,13 @@
 #endif
 
 .text
-.fpu neon
-.arch armv7a
-.object_arch armv4
-.eabi_attribute 10, 0
-.eabi_attribute 12, 0
-.arm
+.arch armv8-a
 .altmacro
 .p2align 2
 
 #include "pixman-private.h"
 #include "pixman-arm-asm.h"
-#include "pixman-arm-neon-asm.h"
+#include "pixman-arma64-neon-asm.h"
 
 /*
  * Bilinear macros from pixman-arm-neon-asm.S
@@ -79,19 +74,21 @@
  */
 
 .macro bilinear_load_8888 reg1, reg2, tmp
-    mov       TMP1, X, asr #16
+    asr       WTMP1, X, #16
     add       X, X, UX
-    add       TMP1, TOP, TMP1, asl #2
-    vld1.32   {reg1}, [TMP1], STRIDE
-    vld1.32   {reg2}, [TMP1]
+    lsl       TMP2, TMP1, #2
+    add       TMP1, TOP, TMP2
+    ld1       {&reg1&.2s}, [TMP1], STRIDE
+    ld1       {&reg2&.2s}, [TMP1]
 .endm
 
 .macro bilinear_load_0565 reg1, reg2, tmp
-    mov       TMP1, X, asr #16
+    asr       WTMP1, X, #16
     add       X, X, UX
-    add       TMP1, TOP, TMP1, asl #1
-    vld1.32   {reg2[0]}, [TMP1], STRIDE
-    vld1.32   {reg2[1]}, [TMP1]
+    lsl       TMP2, TMP1, #1
+    add       TMP1, TOP, TMP2
+    ld1       {&reg2&.s}[0], [TMP1], STRIDE
+    ld1       {&reg2&.s}[1], [TMP1]
     convert_four_0565_to_x888_packed reg2, reg1, reg2, tmp
 .endm
 
@@ -99,11 +96,13 @@
                     acc1, acc2, reg1, reg2, reg3, reg4, tmp1, tmp2
 
     bilinear_load_8888 reg1, reg2, tmp1
-    vmull.u8  acc1, reg1, d28
-    vmlal.u8  acc1, reg2, d29
+    umull     &tmp1&.8h, &reg1&.8b, v28.8b
+    umlal     &tmp1&.8h, &reg2&.8b, v29.8b
+    mov       &acc1&.16b, &tmp1&.16b
     bilinear_load_8888 reg3, reg4, tmp2
-    vmull.u8  acc2, reg3, d28
-    vmlal.u8  acc2, reg4, d29
+    umull     &tmp2&.8h, &reg3&.8b, v28.8b
+    umlal     &tmp2&.8h, &reg4&.8b, v29.8b
+    mov       &acc2&.16b, &tmp2&.16b
 .endm
 
 .macro bilinear_load_and_vertical_interpolate_four_8888 \
@@ -116,98 +115,121 @@
                 yacc1, yacc2, yreg1, yreg2, yreg3, yreg4, yacc2lo, yacc2hi
 .endm
 
+.macro vzip reg1, reg2
+    zip1      v24.8b, reg1, reg2
+    zip2      reg2,   reg1, reg2
+    mov       reg1,   v24.8b
+.endm
+
+.macro vuzp reg1, reg2
+    uzp1     v24.8b, reg1, reg2
+    uzp2     reg2,   reg1, reg2
+    mov      reg1,   v24.8b
+.endm
+
 .macro bilinear_load_and_vertical_interpolate_two_0565 \
                 acc1, acc2, reg1, reg2, reg3, reg4, acc2lo, acc2hi
-
-    mov       TMP1, X, asr #16
+    asr       WTMP1, X, #16
     add       X, X, UX
-    add       TMP1, TOP, TMP1, asl #1
-    mov       TMP2, X, asr #16
+    lsl       TMP2, TMP1, #1
+    add       TMP1, TOP, TMP2
+    asr       WTMP2, X, #16
     add       X, X, UX
-    add       TMP2, TOP, TMP2, asl #1
-    vld1.32   {acc2lo[0]}, [TMP1], STRIDE
-    vld1.32   {acc2hi[0]}, [TMP2], STRIDE
-    vld1.32   {acc2lo[1]}, [TMP1]
-    vld1.32   {acc2hi[1]}, [TMP2]
+    lsl       TMP3, TMP2, #1
+    add       TMP2, TOP, TMP3
+    ld1       {&acc2lo&.s}[0], [TMP1], STRIDE
+    ld1       {&acc2hi&.s}[0], [TMP2], STRIDE
+    ld1       {&acc2lo&.s}[1], [TMP1]
+    ld1       {&acc2hi&.s}[1], [TMP2]
+    mov       &acc2&.d[0], &acc2lo&.d[0]
+    mov       &acc2&.d[1], &acc2hi&.d[0]
     convert_0565_to_x888 acc2, reg3, reg2, reg1
-    vzip.u8   reg1, reg3
-    vzip.u8   reg2, reg4
-    vzip.u8   reg3, reg4
-    vzip.u8   reg1, reg2
-    vmull.u8  acc1, reg1, d28
-    vmlal.u8  acc1, reg2, d29
-    vmull.u8  acc2, reg3, d28
-    vmlal.u8  acc2, reg4, d29
+    vzip      &reg1&.8b, &reg3&.8b
+    vzip      &reg2&.8b, &reg4&.8b
+    vzip      &reg3&.8b, &reg4&.8b
+    vzip      &reg1&.8b, &reg2&.8b
+    umull     &acc1&.8h, &reg1&.8b, v28.8b
+    umlal     &acc1&.8h, &reg2&.8b, v29.8b
+    umull     &acc2&.8h, &reg3&.8b, v28.8b
+    umlal     &acc2&.8h, &reg4&.8b, v29.8b
 .endm
 
 .macro bilinear_load_and_vertical_interpolate_four_0565 \
                 xacc1, xacc2, xreg1, xreg2, xreg3, xreg4, xacc2lo, xacc2hi \
                 yacc1, yacc2, yreg1, yreg2, yreg3, yreg4, yacc2lo, yacc2hi
 
-    mov       TMP1, X, asr #16
+    asr       WTMP1, X, #16
     add       X, X, UX
-    add       TMP1, TOP, TMP1, asl #1
-    mov       TMP2, X, asr #16
+    lsl       TMP2, TMP1, #1
+    add       TMP1, TOP, TMP2
+    asr       WTMP2, X, #16
     add       X, X, UX
-    add       TMP2, TOP, TMP2, asl #1
-    vld1.32   {xacc2lo[0]}, [TMP1], STRIDE
-    vld1.32   {xacc2hi[0]}, [TMP2], STRIDE
-    vld1.32   {xacc2lo[1]}, [TMP1]
-    vld1.32   {xacc2hi[1]}, [TMP2]
+    lsl       TMP3, TMP2, #1
+    add       TMP2, TOP, TMP3
+    ld1       {&xacc2lo&.s}[0], [TMP1], STRIDE
+    ld1       {&xacc2hi&.s}[0], [TMP2], STRIDE
+    ld1       {&xacc2lo&.s}[1], [TMP1]
+    ld1       {&xacc2hi&.s}[1], [TMP2]
+    mov       &xacc2&.d[0], &xacc2lo&.d[0]
+    mov       &xacc2&.d[1], &xacc2hi&.d[0]
     convert_0565_to_x888 xacc2, xreg3, xreg2, xreg1
-    mov       TMP1, X, asr #16
+    asr       WTMP1, X, #16
     add       X, X, UX
-    add       TMP1, TOP, TMP1, asl #1
-    mov       TMP2, X, asr #16
+    lsl       TMP2, TMP1, #1
+    add       TMP1, TOP, TMP2
+    asr       WTMP2, X, #16
     add       X, X, UX
-    add       TMP2, TOP, TMP2, asl #1
-    vld1.32   {yacc2lo[0]}, [TMP1], STRIDE
-    vzip.u8   xreg1, xreg3
-    vld1.32   {yacc2hi[0]}, [TMP2], STRIDE
-    vzip.u8   xreg2, xreg4
-    vld1.32   {yacc2lo[1]}, [TMP1]
-    vzip.u8   xreg3, xreg4
-    vld1.32   {yacc2hi[1]}, [TMP2]
-    vzip.u8   xreg1, xreg2
+    lsl       TMP3, TMP2, #1
+    add       TMP2, TOP, TMP3
+    ld1       {&yacc2lo&.s}[0], [TMP1], STRIDE
+    vzip      &xreg1&.8b, &xreg3&.8b
+    ld1       {&yacc2hi&.s}[0], [TMP2], STRIDE
+    vzip      &xreg2&.8b, &xreg4&.8b
+    ld1       {&yacc2lo&.s}[1], [TMP1]
+    vzip      &xreg3&.8b, &xreg4&.8b
+    ld1       {&yacc2hi&.s}[1], [TMP2]
+    vzip      &xreg1&.8b, &xreg2&.8b
+    mov       &yacc2&.d[0], &yacc2lo&.d[0]
+    mov       &yacc2&.d[1], &yacc2hi&.d[0]
     convert_0565_to_x888 yacc2, yreg3, yreg2, yreg1
-    vmull.u8  xacc1, xreg1, d28
-    vzip.u8   yreg1, yreg3
-    vmlal.u8  xacc1, xreg2, d29
-    vzip.u8   yreg2, yreg4
-    vmull.u8  xacc2, xreg3, d28
-    vzip.u8   yreg3, yreg4
-    vmlal.u8  xacc2, xreg4, d29
-    vzip.u8   yreg1, yreg2
-    vmull.u8  yacc1, yreg1, d28
-    vmlal.u8  yacc1, yreg2, d29
-    vmull.u8  yacc2, yreg3, d28
-    vmlal.u8  yacc2, yreg4, d29
+    umull     &xacc1&.8h, &xreg1&.8b, v28.8b
+    vzip      &yreg1&.8b, &yreg3&.8b
+    umlal     &xacc1&.8h, &xreg2&.8b, v29.8b
+    vzip      &yreg2&.8b, &yreg4&.8b
+    umull     &xacc2&.8h, &xreg3&.8b, v28.8b
+    vzip      &yreg3&.8b, &yreg4&.8b
+    umlal     &xacc2&.8h, &xreg4&.8b, v29.8b
+    vzip      &yreg1&.8b, &yreg2&.8b
+    umull     &yacc1&.8h, &yreg1&.8b, v28.8b
+    umlal     &yacc1&.8h, &yreg2&.8b, v29.8b
+    umull     &yacc2&.8h, &yreg3&.8b, v28.8b
+    umlal     &yacc2&.8h, &yreg4&.8b, v29.8b
 .endm
 
 .macro bilinear_store_8888 numpix, tmp1, tmp2
 .if numpix == 4
-    vst1.32   {d0, d1}, [OUT]!
+    st1       {v0.2s, v1.2s}, [OUT], #16
 .elseif numpix == 2
-    vst1.32   {d0}, [OUT]!
+    st1       {v0.2s}, [OUT], #8
 .elseif numpix == 1
-    vst1.32   {d0[0]}, [OUT, :32]!
+    st1       {v0.s}[0], [OUT], #4
 .else
     .error bilinear_store_8888 numpix is unsupported
 .endif
 .endm
 
 .macro bilinear_store_0565 numpix, tmp1, tmp2
-    vuzp.u8 d0, d1
-    vuzp.u8 d2, d3
-    vuzp.u8 d1, d3
-    vuzp.u8 d0, d2
-    convert_8888_to_0565 d2, d1, d0, q1, tmp1, tmp2
+    vuzp    v0.8b, v1.8b
+    vuzp    v2.8b, v3.8b
+    vuzp    v1.8b, v3.8b
+    vuzp    v0.8b, v2.8b
+    convert_8888_to_0565 v2, v1, v0, v1, tmp1, tmp2
 .if numpix == 4
-    vst1.16   {d2}, [OUT]!
+    st1       {v1.4h}, [OUT], #8
 .elseif numpix == 2
-    vst1.32   {d2[0]}, [OUT]!
+    st1       {v1.s}[0], [OUT], #4
 .elseif numpix == 1
-    vst1.16   {d2[0]}, [OUT]!
+    st1       {v1.h}[0], [OUT], #2
 .else
     .error bilinear_store_0565 numpix is unsupported
 .endif
@@ -216,22 +238,22 @@
 
 /*
  * Macros for loading mask pixels into register 'mask'.
- * vdup must be done in somewhere else.
+ * dup must be done in somewhere else.
  */
 .macro bilinear_load_mask_x numpix, mask
 .endm
 
 .macro bilinear_load_mask_8 numpix, mask
 .if numpix == 4
-    vld1.32     {mask[0]}, [MASK]!
+    ld1         {&mask&.s}[0], [MASK], #4
 .elseif numpix == 2
-    vld1.16     {mask[0]}, [MASK]!
+    ld1         {&mask&.h}[0], [MASK], #2
 .elseif numpix == 1
-    vld1.8      {mask[0]}, [MASK]!
+    ld1         {&mask&.b}[0], [MASK], #1
 .else
     .error bilinear_load_mask_8 numpix is unsupported
 .endif
-    pld         [MASK, #prefetch_offset]
+    prfm        PLDL2STRM, [MASK, #prefetch_offset]
 .endm
 
 .macro bilinear_load_mask mask_fmt, numpix, mask
@@ -251,15 +273,17 @@
 
 .macro bilinear_load_dst_8888 numpix, dst0, dst1, dst01
 .if numpix == 4
-    vld1.32     {dst0, dst1}, [OUT]
+    ld1         {&dst0&.2s, &dst1&.2s}, [OUT]
 .elseif numpix == 2
-    vld1.32     {dst0}, [OUT]
+    ld1         {&dst0&.2s}, [OUT]
 .elseif numpix == 1
-    vld1.32     {dst0[0]}, [OUT]
+    ld1         {&dst0&.s}[0], [OUT]
 .else
     .error bilinear_load_dst_8888 numpix is unsupported
 .endif
-    pld         [OUT, #(prefetch_offset * 4)]
+    mov         &dst01&.d[0], &dst0&.d[0]
+    mov         &dst01&.d[1], &dst1&.d[0]
+    prfm        PLDL2STRM, [OUT, #(prefetch_offset * 4)]
 .endm
 
 .macro bilinear_load_dst_8888_over numpix, dst0, dst1, dst01
@@ -291,11 +315,11 @@
 
 .macro bilinear_duplicate_mask_8 numpix, mask
 .if numpix == 4
-    vdup.32     mask, mask[0]
+    dup         &mask&.2s, &mask&.s[0]
 .elseif numpix == 2
-    vdup.16     mask, mask[0]
+    dup         &mask&.4h, &mask&.h[0]
 .elseif numpix == 1
-    vdup.8      mask, mask[0]
+    dup         &mask&.8b, &mask&.b[0]
 .else
     .error bilinear_duplicate_mask_8 is unsupported
 .endif
@@ -309,11 +333,15 @@
  * Macros for interleaving src and dst pixels to rrrr gggg bbbb aaaa form.
  * Interleave should be done when maks is enabled or operator is 'over'.
  */
-.macro bilinear_interleave src0, src1, dst0, dst1
-    vuzp.8      src0, src1
-    vuzp.8      dst0, dst1
-    vuzp.8      src0, src1
-    vuzp.8      dst0, dst1
+.macro bilinear_interleave src0, src1, src01, dst0, dst1, dst01
+    vuzp       &src0&.8b, &src1&.8b
+    vuzp       &dst0&.8b, &dst1&.8b
+    vuzp       &src0&.8b, &src1&.8b
+    vuzp       &dst0&.8b, &dst1&.8b
+    mov        &src01&.d[1], &src1&.d[0]
+    mov        &src01&.d[0], &src0&.d[0]
+    mov        &dst01&.d[1], &dst1&.d[0]
+    mov        &dst01&.d[0], &dst0&.d[0]
 .endm
 
 .macro bilinear_interleave_src_dst_x_src \
@@ -323,29 +351,30 @@
 .macro bilinear_interleave_src_dst_x_over \
                 numpix, src0, src1, src01, dst0, dst1, dst01
 
-    bilinear_interleave src0, src1, dst0, dst1
+    bilinear_interleave src0, src1, src01, dst0, dst1, dst01
 .endm
 
 .macro bilinear_interleave_src_dst_x_add \
                 numpix, src0, src1, src01, dst0, dst1, dst01
+    bilinear_interleave src0, src1, src01, dst0, dst1, dst01
 .endm
 
 .macro bilinear_interleave_src_dst_8_src \
                 numpix, src0, src1, src01, dst0, dst1, dst01
 
-    bilinear_interleave src0, src1, dst0, dst1
+    bilinear_interleave src0, src1, src01, dst0, dst1, dst01
 .endm
 
 .macro bilinear_interleave_src_dst_8_over \
                 numpix, src0, src1, src01, dst0, dst1, dst01
 
-    bilinear_interleave src0, src1, dst0, dst1
+    bilinear_interleave src0, src1, src01, dst0, dst1, dst01
 .endm
 
 .macro bilinear_interleave_src_dst_8_add \
                 numpix, src0, src1, src01, dst0, dst1, dst01
 
-    bilinear_interleave src0, src1, dst0, dst1
+    bilinear_interleave src0, src1, src01, dst0, dst1, dst01
 .endm
 
 .macro bilinear_interleave_src_dst \
@@ -370,14 +399,16 @@
                 numpix, src0, src1, src01, mask, \
                 tmp01, tmp23, tmp45, tmp67
 
-    vmull.u8        tmp01, src0, mask
-    vmull.u8        tmp23, src1, mask
+    umull           &tmp01&.8h, &src0&.8b, &mask&.8b
+    umull           &tmp23&.8h, &src1&.8b, &mask&.8b
     /* bubbles */
-    vrshr.u16       tmp45, tmp01, #8
-    vrshr.u16       tmp67, tmp23, #8
+    urshr           &tmp45&.8h, &tmp01&.8h, #8
+    urshr           &tmp67&.8h, &tmp23&.8h, #8
     /* bubbles */
-    vraddhn.u16     src0, tmp45, tmp01
-    vraddhn.u16     src1, tmp67, tmp23
+    raddhn          &src0&.8b, &tmp45&.8h, &tmp01&.8h
+    raddhn          &src1&.8b, &tmp67&.8h, &tmp23&.8h
+    mov             &src01&.d[0], &src0&.d[0]
+    mov             &src01&.d[1], &src1&.d[0]
 .endm
 
 .macro bilinear_apply_mask_to_src \
@@ -403,28 +434,36 @@
                 numpix, src0, src1, src01, dst0, dst1, dst01, \
                 tmp01, tmp23, tmp45, tmp67, tmp8
 
-    vdup.32     tmp8, src1[1]
+    dup         &tmp8&.2s, &src1&.s[1]
     /* bubbles */
-    vmvn.8      tmp8, tmp8
+    mvn         &tmp8&.8b, &tmp8&.8b
     /* bubbles */
-    vmull.u8    tmp01, dst0, tmp8
+    umull       &tmp01&.8h, &dst0&.8b, &tmp8&.8b
     /* bubbles */
-    vmull.u8    tmp23, dst1, tmp8
+    umull       &tmp23&.8h, &dst1&.8b, &tmp8&.8b
     /* bubbles */
-    vrshr.u16   tmp45, tmp01, #8
-    vrshr.u16   tmp67, tmp23, #8
+    urshr       &tmp45&.8h, &tmp01&.8h, #8
+    urshr       &tmp67&.8h, &tmp23&.8h, #8
     /* bubbles */
-    vraddhn.u16 dst0, tmp45, tmp01
-    vraddhn.u16 dst1, tmp67, tmp23
+    raddhn      &dst0&.8b, &tmp45&.8h, &tmp01&.8h
+    raddhn      &dst1&.8b, &tmp67&.8h, &tmp23&.8h
+    mov         &dst01&.d[0], &dst0&.d[0]
+    mov         &dst01&.d[1], &dst1&.d[0]
     /* bubbles */
-    vqadd.u8    src01, dst01, src01
+    uqadd       &src0&.8b, &dst0&.8b, &src0&.8b
+    uqadd       &src1&.8b, &dst1&.8b, &src1&.8b
+    mov         &src01&.d[0], &src0&.d[0]
+    mov         &src01&.d[1], &src1&.d[0]
 .endm
 
 .macro bilinear_combine_add \
                 numpix, src0, src1, src01, dst0, dst1, dst01, \
                 tmp01, tmp23, tmp45, tmp67, tmp8
 
-    vqadd.u8    src01, dst01, src01
+    uqadd       &src0&.8b, &dst0&.8b, &src0&.8b
+    uqadd       &src1&.8b, &dst1&.8b, &src1&.8b
+    mov         &src01&.d[0], &src0&.d[0]
+    mov         &src01&.d[1], &src1&.d[0]
 .endm
 
 .macro bilinear_combine \
@@ -440,9 +479,11 @@
  * Macros for final deinterleaving of destination pixels if needed.
  */
 .macro bilinear_deinterleave numpix, dst0, dst1, dst01
-    vuzp.8      dst0, dst1
+    vuzp       &dst0&.8b, &dst1&.8b
     /* bubbles */
-    vuzp.8      dst0, dst1
+    vuzp       &dst0&.8b, &dst1&.8b
+    mov        &dst01&.d[0], &dst0&.d[0]
+    mov        &dst01&.d[1], &dst1&.d[0]
 .endm
 
 .macro bilinear_deinterleave_dst_x_src numpix, dst0, dst1, dst01
@@ -453,6 +494,7 @@
 .endm
 
 .macro bilinear_deinterleave_dst_x_add numpix, dst0, dst1, dst01
+    bilinear_deinterleave numpix, dst0, dst1, dst01
 .endm
 
 .macro bilinear_deinterleave_dst_8_src numpix, dst0, dst1, dst01
@@ -473,142 +515,186 @@
 
 
 .macro bilinear_interpolate_last_pixel src_fmt, mask_fmt, dst_fmt, op
-    bilinear_load_&src_fmt d0, d1, d2
-    bilinear_load_mask mask_fmt, 1, d4
-    bilinear_load_dst dst_fmt, op, 1, d18, d19, q9
-    vmull.u8  q1, d0, d28
-    vmlal.u8  q1, d1, d29
+    bilinear_load_&src_fmt v0, v1, v2
+    bilinear_load_mask mask_fmt, 1, v4
+    bilinear_load_dst dst_fmt, op, 1, v18, v19, v9
+    mov       v9.d[0], v18.d[0]
+    mov       v9.d[1], v19.d[0]
+    umull     v2.8h, v0.8b, v28.8b
+    umlal     v2.8h, v1.8b, v29.8b
     /* 5 cycles bubble */
-    vshll.u16 q0, d2, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16 q0, d2, d30
-    vmlal.u16 q0, d3, d30
+    ushll     v0.4s, v2.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl     v0.4s, v2.4h, v30.4h
+    mov       v2.d[0], v2.d[1]
+    umlal     v0.4s, v2.4h, v30.4h
     /* 5 cycles bubble */
-    bilinear_duplicate_mask mask_fmt, 1, d4
-    vshrn.u32 d0, q0, #(2 * BILINEAR_INTERPOLATION_BITS)
+    bilinear_duplicate_mask mask_fmt, 1, v4
+    shrn      v0.4h, v0.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
     /* 3 cycles bubble */
-    vmovn.u16 d0, q0
+    xtn       v0.8b, v0.8h
     /* 1 cycle bubble */
     bilinear_interleave_src_dst \
-                mask_fmt, op, 1, d0, d1, q0, d18, d19, q9
+                mask_fmt, op, 1, v0, v1, v0, v18, v19, v9
+    mov       v1.d[0],  v0.d[1]
+    mov       v18.d[0], v9.d[0]
+    mov       v19.d[0], v9.d[1]
     bilinear_apply_mask_to_src \
-                mask_fmt, 1, d0, d1, q0, d4, \
-                q3, q8, q10, q11
+                mask_fmt, 1, v0, v1, v0, v4, \
+                v3, v8, v10, v11
+    mov       v1.d[0], v0.d[1]
     bilinear_combine \
-                op, 1, d0, d1, q0, d18, d19, q9, \
-                q3, q8, q10, q11, d5
-    bilinear_deinterleave_dst mask_fmt, op, 1, d0, d1, q0
-    bilinear_store_&dst_fmt 1, q2, q3
+                op, 1, v0, v1, v0, v18, v19, v9, \
+                v3, v8, v10, v11, v5
+    mov       v1.d[0], v0.d[1]
+    bilinear_deinterleave_dst mask_fmt, op, 1, v0, v1, v0
+    mov       v1.d[0], v0.d[1]
+    bilinear_store_&dst_fmt 1, v17, v18
 .endm
 
 .macro bilinear_interpolate_two_pixels src_fmt, mask_fmt, dst_fmt, op
     bilinear_load_and_vertical_interpolate_two_&src_fmt \
-                q1, q11, d0, d1, d20, d21, d22, d23
-    bilinear_load_mask mask_fmt, 2, d4
-    bilinear_load_dst dst_fmt, op, 2, d18, d19, q9
-    vshll.u16 q0, d2, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16 q0, d2, d30
-    vmlal.u16 q0, d3, d30
-    vshll.u16 q10, d22, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16 q10, d22, d31
-    vmlal.u16 q10, d23, d31
-    vshrn.u32 d0, q0, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32 d1, q10, #(2 * BILINEAR_INTERPOLATION_BITS)
-    bilinear_duplicate_mask mask_fmt, 2, d4
-    vshr.u16  q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vadd.u16  q12, q12, q13
-    vmovn.u16 d0, q0
+                v1, v11, v18, v19, v20, v21, v22, v23
+    mov      v2.d[0], v1.d[0]
+    mov      v3.d[0], v1.d[1]
+    mov      v22.d[0], v11.d[0]
+    mov      v23.d[0], v11.d[1]
+    bilinear_load_mask mask_fmt, 2, v4
+    bilinear_load_dst dst_fmt, op, 2, v18, v19, v9
+    mov       v9.d[0], v18.d[0]
+    mov       v9.d[1], v19.d[0]
+    ushll     v0.4s, v2.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl     v0.4s, v2.4h, v30.4h
+    umlal     v0.4s, v3.4h, v30.4h
+    ushll     v10.4s, v22.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl     v10.4s, v22.4h, v31.4h
+    umlal     v10.4s, v23.4h, v31.4h
+    shrn      v0.4h, v0.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    shrn      v1.4h, v10.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    mov       v0.d[1], v1.d[0]
+    bilinear_duplicate_mask mask_fmt, 2, v4
+    ushr      v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov       v31.d[0], v30.d[1]
+    add       v12.8h, v12.8h, v13.8h
+    xtn       v0.8b, v0.8h
     bilinear_interleave_src_dst \
-                mask_fmt, op, 2, d0, d1, q0, d18, d19, q9
+                mask_fmt, op, 2, v0, v1, v0, v18, v19, v9
+    mov       v1.d[0],  v0.d[1]
+    mov       v18.d[0], v9.d[0]
+    mov       v19.d[0], v9.d[1]
     bilinear_apply_mask_to_src \
-                mask_fmt, 2, d0, d1, q0, d4, \
-                q3, q8, q10, q11
+                mask_fmt, 2, v0, v1, v0, v4, \
+                v3, v8, v10, v11
+    mov       v1.d[0],  v0.d[1]
     bilinear_combine \
-                op, 2, d0, d1, q0, d18, d19, q9, \
-                q3, q8, q10, q11, d5
-    bilinear_deinterleave_dst mask_fmt, op, 2, d0, d1, q0
-    bilinear_store_&dst_fmt 2, q2, q3
+                op, 2, v0, v1, v0, v18, v19, v9, \
+                v3, v8, v10, v11, v5
+    mov       v1.d[0],  v0.d[1]
+    bilinear_deinterleave_dst mask_fmt, op, 2, v0, v1, v0
+    mov       v1.d[0],  v0.d[1]
+    bilinear_store_&dst_fmt 2, v16, v17
 .endm
 
 .macro bilinear_interpolate_four_pixels src_fmt, mask_fmt, dst_fmt, op
     bilinear_load_and_vertical_interpolate_four_&src_fmt \
-                q1, q11, d0, d1, d20, d21, d22, d23 \
-                q3, q9,  d4, d5, d16, d17, d18, d19
-    pld       [TMP1, PF_OFFS]
+                v1, v11, v4,  v5,  v6,  v7,  v22, v23 \
+                v3, v9,  v16, v17, v20, v21, v18, v19
+    mov       v6.d[0],  v3.d[0]
+    mov       v7.d[0],  v3.d[1]
+    mov       v18.d[0], v9.d[0]
+    mov       v19.d[0], v9.d[1]
+    mov       v2.d[0],  v1.d[0]
+    mov       v3.d[0],  v1.d[1]
+    mov       v22.d[0], v11.d[0]
+    mov       v23.d[0], v11.d[1]
+    prfm      PLDL2STRM, [TMP1, PF_OFFS]
     sub       TMP1, TMP1, STRIDE
-    vshll.u16 q0, d2, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16 q0, d2, d30
-    vmlal.u16 q0, d3, d30
-    vshll.u16 q10, d22, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16 q10, d22, d31
-    vmlal.u16 q10, d23, d31
-    vshr.u16  q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vshll.u16 q2, d6, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16 q2, d6, d30
-    vmlal.u16 q2, d7, d30
-    vshll.u16 q8, d18, #BILINEAR_INTERPOLATION_BITS
-    bilinear_load_mask mask_fmt, 4, d22
-    bilinear_load_dst dst_fmt, op, 4, d2, d3, q1
-    pld       [TMP1, PF_OFFS]
-    vmlsl.u16 q8, d18, d31
-    vmlal.u16 q8, d19, d31
-    vadd.u16  q12, q12, q13
-    vshrn.u32 d0, q0, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32 d1, q10, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32 d4, q2, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32 d5, q8, #(2 * BILINEAR_INTERPOLATION_BITS)
-    bilinear_duplicate_mask mask_fmt, 4, d22
-    vshr.u16  q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vmovn.u16 d0, q0
-    vmovn.u16 d1, q2
-    vadd.u16  q12, q12, q13
+    prfm      PLDL2STRM, [TMP1, PF_OFFS]
+    ushll     v0.4s, v2.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl     v0.4s, v2.4h, v30.4h
+    umlal     v0.4s, v3.4h, v30.4h
+    ushll     v10.4s, v22.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl     v10.4s, v22.4h, v31.4h
+    umlal     v10.4s, v23.4h, v31.4h
+    ushr      v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov       v31.d[0], v30.d[1]
+    ushll     v2.4s, v6.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl     v2.4s, v6.4h, v30.4h
+    umlal     v2.4s, v7.4h, v30.4h
+    ushll     v8.4s, v18.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl     v8.4s, v18.4h, v31.4h
+    umlal     v8.4s, v19.4h, v31.4h
+    add       v12.8h, v12.8h, v13.8h
+    shrn      v0.4h, v0.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    shrn      v1.4h, v10.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    mov       v0.d[1], v1.d[0]
+    shrn      v4.4h, v2.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    shrn      v5.4h, v8.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    mov       v2.d[0], v4.d[0]
+    mov       v2.d[1], v5.d[0]
+    bilinear_load_mask mask_fmt, 4, v4
+    bilinear_duplicate_mask mask_fmt, 4, v4
+    ushr      v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov       v31.d[0], v30.d[1]
+    xtn       v0.8b, v0.8h
+    xtn       v1.8b, v2.8h
+    add       v12.8h, v12.8h, v13.8h
+    bilinear_load_dst dst_fmt, op, 4, v2, v3, v21
+    mov       v21.d[0], v2.d[0]
+    mov       v21.d[1], v3.d[0]
     bilinear_interleave_src_dst \
-                mask_fmt, op, 4, d0, d1, q0, d2, d3, q1
+                mask_fmt, op, 4, v0, v1, v0, v2, v3, v1
+    mov       v2.d[0], v1.d[0]
+    mov       v3.d[0], v1.d[1]
+    mov       v1.d[0], v0.d[1]
     bilinear_apply_mask_to_src \
-                mask_fmt, 4, d0, d1, q0, d22, \
-                q3, q8, q9, q10
+                mask_fmt, 4, v0, v1, v0, v4, \
+                v6, v8, v9, v10
+    mov      v1.d[0], v0.d[1]
     bilinear_combine \
-                op, 4, d0, d1, q0, d2, d3, q1, \
-                q3, q8, q9, q10, d23
-    bilinear_deinterleave_dst mask_fmt, op, 4, d0, d1, q0
-    bilinear_store_&dst_fmt 4, q2, q3
+                op, 4, v0, v1, v0, v2, v3, v1, \
+                v6, v8, v9, v10, v23
+    mov      v1.d[0], v0.d[1]
+    bilinear_deinterleave_dst mask_fmt, op, 4, v0, v1, v0
+    mov      v1.d[0], v0.d[1]
+    bilinear_store_&dst_fmt 4, v6, v7
 .endm
 
-.set BILINEAR_FLAG_USE_MASK,		1
-.set BILINEAR_FLAG_USE_ALL_NEON_REGS,	2
+.set BILINEAR_FLAG_USE_MASK,        1
+.set BILINEAR_FLAG_USE_ALL_NEON_REGS,    2
 
 /*
  * Main template macro for generating NEON optimized bilinear scanline functions.
  *
  * Bilinear scanline generator macro take folling arguments:
- *  fname			- name of the function to generate
- *  src_fmt			- source color format (8888 or 0565)
- *  dst_fmt			- destination color format (8888 or 0565)
- *  src/dst_bpp_shift		- (1 << bpp_shift) is the size of src/dst pixel in bytes
- *  process_last_pixel		- code block that interpolate one pixel and does not
- *				  update horizontal weight
- *  process_two_pixels		- code block that interpolate two pixels and update
- *				  horizontal weight
- *  process_four_pixels		- code block that interpolate four pixels and update
- *				  horizontal weight
- *  process_pixblock_head	- head part of middle loop
- *  process_pixblock_tail	- tail part of middle loop
- *  process_pixblock_tail_head	- tail_head of middle loop
- *  pixblock_size		- number of pixels processed in a single middle loop
- *  prefetch_distance		- prefetch in the source image by that many pixels ahead
+ *  fname            - name of the function to generate
+ *  src_fmt            - source color format (8888 or 0565)
+ *  dst_fmt            - destination color format (8888 or 0565)
+ *  src/dst_bpp_shift        - (1 << bpp_shift) is the size of src/dst pixel in bytes
+ *  process_last_pixel        - code block that interpolate one pixel and does not
+ *                  update horizontal weight
+ *  process_two_pixels        - code block that interpolate two pixels and update
+ *                  horizontal weight
+ *  process_four_pixels        - code block that interpolate four pixels and update
+ *                  horizontal weight
+ *  process_pixblock_head    - head part of middle loop
+ *  process_pixblock_tail    - tail part of middle loop
+ *  process_pixblock_tail_head    - tail_head of middle loop
+ *  pixblock_size        - number of pixels processed in a single middle loop
+ *  prefetch_distance        - prefetch in the source image by that many pixels ahead
  */
 
 .macro generate_bilinear_scanline_func \
-	fname, \
-	src_fmt, dst_fmt, src_bpp_shift, dst_bpp_shift, \
-	bilinear_process_last_pixel, \
-	bilinear_process_two_pixels, \
-	bilinear_process_four_pixels, \
-	bilinear_process_pixblock_head, \
-	bilinear_process_pixblock_tail, \
-	bilinear_process_pixblock_tail_head, \
-	pixblock_size, \
-	prefetch_distance, \
-	flags
+    fname, \
+    src_fmt, dst_fmt, src_bpp_shift, dst_bpp_shift, \
+    bilinear_process_last_pixel, \
+    bilinear_process_two_pixels, \
+    bilinear_process_four_pixels, \
+    bilinear_process_pixblock_head, \
+    bilinear_process_pixblock_tail, \
+    bilinear_process_pixblock_tail_head, \
+    pixblock_size, \
+    prefetch_distance, \
+    flags
 
 pixman_asm_function fname
 .if pixblock_size == 8
@@ -618,145 +704,188 @@ pixman_asm_function fname
 .endif
 
 .if ((flags) & BILINEAR_FLAG_USE_MASK) == 0
-    OUT       .req    r0
-    TOP       .req    r1
-    BOTTOM    .req    r2
-    WT        .req    r3
-    WB        .req    r4
-    X         .req    r5
-    UX        .req    r6
-    WIDTH     .req    ip
-    TMP1      .req    r3
-    TMP2      .req    r4
-    PF_OFFS   .req    r7
-    TMP3      .req    r8
-    TMP4      .req    r9
-    STRIDE    .req    r2
+    OUT       .req    x0
+    TOP       .req    x1
+    BOTTOM    .req    x2
+    WT        .req    x3
+    WWT       .req    w3
+    WB        .req    x4
+    WWB       .req    w4
+    X         .req    w5
+    UX        .req    w6
+    WIDTH     .req    x7
+    TMP1      .req    x10
+    WTMP1     .req    w10
+    TMP2      .req    x11
+    WTMP2     .req    w11
+    PF_OFFS   .req    x12
+    TMP3      .req    x13
+    WTMP3     .req    w13
+    TMP4      .req    x14
+    WTMP4     .req    w14
+    STRIDE    .req    x15
+    DUMMY     .req    x30
 
-    mov		ip, sp
-    push	{r4, r5, r6, r7, r8, r9}
-    mov		PF_OFFS, #prefetch_distance
-    ldmia	ip, {WB, X, UX, WIDTH}
+    stp       x29, x30, [sp, -16]!
+    mov       x29, sp
+    sub       sp, sp, 112
+    sub       x29, x29, 64
+    st1       {v8.8b, v9.8b, v10.8b, v11.8b}, [x29], 32
+    st1       {v12.8b, v13.8b, v14.8b, v15.8b}, [x29], 32
+    stp       x10, x11, [x29, -80]
+    stp       x12, x13, [x29, -96]
+    stp       x14, x15, [x29, -112]
 .else
-    OUT       .req      r0
-    MASK      .req      r1
-    TOP       .req      r2
-    BOTTOM    .req      r3
-    WT        .req      r4
-    WB        .req      r5
-    X         .req      r6
-    UX        .req      r7
-    WIDTH     .req      ip
-    TMP1      .req      r4
-    TMP2      .req      r5
-    PF_OFFS   .req      r8
-    TMP3      .req      r9
-    TMP4      .req      r10
-    STRIDE    .req      r3
+    OUT       .req      x0
+    MASK      .req      x1
+    TOP       .req      x2
+    BOTTOM    .req      x3
+    WT        .req      x4
+    WWT       .req      w4
+    WB        .req      x5
+    WWB       .req      w5
+    X         .req      w6
+    UX        .req      w7
+    WIDTH     .req      x8
+    TMP1      .req      x10
+    WTMP1     .req      w10
+    TMP2      .req      x11
+    WTMP2     .req      w11
+    PF_OFFS   .req      x12
+    TMP3      .req      x13
+    WTMP3     .req      w13
+    TMP4      .req      x14
+    WTMP4     .req      w14
+    STRIDE    .req      x15
+    DUMMY     .req      x30
 
     .set prefetch_offset, prefetch_distance
 
-    mov       ip, sp
-    push      {r4, r5, r6, r7, r8, r9, r10, ip}
-    mov       PF_OFFS, #prefetch_distance
-    ldmia     ip, {WT, WB, X, UX, WIDTH}
+    stp      x29, x30, [sp, -16]!
+    mov      x29, sp
+    sub      x29, x29, 64
+    st1      {v8.8b, v9.8b, v10.8b, v11.8b}, [x29], 32
+    st1      {v12.8b, v13.8b, v14.8b, v15.8b}, [x29], 32
+    stp      x10, x11, [x29, -80]
+    stp      x12, x13, [x29, -96]
+    stp      x14, x15, [x29, -112]
+    str      x8, [x29, -120]
+    ldr      w8, [x29, 16]
+    sub      sp, sp, 120
 .endif
 
-    mul       PF_OFFS, PF_OFFS, UX
+    mov      WTMP1, #prefetch_distance
+    umull    PF_OFFS, WTMP1, UX
 
-.if ((flags) & BILINEAR_FLAG_USE_ALL_NEON_REGS) != 0
-    vpush     {d8-d15}
-.endif
+    sub      STRIDE, BOTTOM, TOP
+    .unreq   BOTTOM
 
-    sub	      STRIDE, BOTTOM, TOP
-    .unreq    BOTTOM
+    cmp      WIDTH, #0
+    ble      300f
 
-    cmp       WIDTH, #0
-    ble       3f
-
-    vdup.u16  q12, X
-    vdup.u16  q13, UX
-    vdup.u8   d28, WT
-    vdup.u8   d29, WB
-    vadd.u16  d25, d25, d26
+    dup      v12.8h, X
+    dup      v13.8h, UX
+    dup      v28.8b, WWT
+    dup      v29.8b, WWB
+    mov      v25.d[0], v12.d[1]
+    mov      v26.d[0], v13.d[0]
+    add      v25.4h, v25.4h, v26.4h
+    mov      v12.d[1], v25.d[0]
 
     /* ensure good destination alignment  */
     cmp       WIDTH, #1
-    blt       0f
+    blt       100f
     tst       OUT, #(1 << dst_bpp_shift)
-    beq       0f
-    vshr.u16  q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vadd.u16  q12, q12, q13
+    beq       100f
+    ushr      v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov       v31.d[0], v30.d[1]
+    add       v12.8h, v12.8h, v13.8h
     bilinear_process_last_pixel
     sub       WIDTH, WIDTH, #1
-0:
-    vadd.u16  q13, q13, q13
-    vshr.u16  q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vadd.u16  q12, q12, q13
+100:
+    add       v13.8h, v13.8h, v13.8h
+    ushr      v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov       v31.d[0], v30.d[1]
+    add       v12.8h, v12.8h, v13.8h
 
     cmp       WIDTH, #2
-    blt       0f
+    blt       100f
     tst       OUT, #(1 << (dst_bpp_shift + 1))
-    beq       0f
+    beq       100f
     bilinear_process_two_pixels
     sub       WIDTH, WIDTH, #2
-0:
+100:
 .if pixblock_size == 8
     cmp       WIDTH, #4
-    blt       0f
+    blt       100f
     tst       OUT, #(1 << (dst_bpp_shift + 2))
-    beq       0f
+    beq       100f
     bilinear_process_four_pixels
     sub       WIDTH, WIDTH, #4
-0:
+100:
 .endif
     subs      WIDTH, WIDTH, #pixblock_size
-    blt       1f
-    mov       PF_OFFS, PF_OFFS, asr #(16 - src_bpp_shift)
+    blt       100f
+    asr       PF_OFFS, PF_OFFS, #(16 - src_bpp_shift)
     bilinear_process_pixblock_head
     subs      WIDTH, WIDTH, #pixblock_size
-    blt       5f
+    blt       500f
 0:
     bilinear_process_pixblock_tail_head
     subs      WIDTH, WIDTH, #pixblock_size
     bge       0b
-5:
+500:
     bilinear_process_pixblock_tail
-1:
+100:
 .if pixblock_size == 8
     tst       WIDTH, #4
-    beq       2f
+    beq       200f
     bilinear_process_four_pixels
-2:
+200:
 .endif
     /* handle the remaining trailing pixels */
     tst       WIDTH, #2
-    beq       2f
+    beq       200f
     bilinear_process_two_pixels
-2:
+200:
     tst       WIDTH, #1
-    beq       3f
+    beq       300f
     bilinear_process_last_pixel
-3:
-.if ((flags) & BILINEAR_FLAG_USE_ALL_NEON_REGS) != 0
-    vpop      {d8-d15}
-.endif
+300:
 
 .if ((flags) & BILINEAR_FLAG_USE_MASK) == 0
-    pop       {r4, r5, r6, r7, r8, r9}
+    sub       x29, x29, 64
+    ld1       {v8.8b, v9.8b, v10.8b, v11.8b}, [x29], 32
+    ld1       {v12.8b, v13.8b, v14.8b, v15.8b}, [x29], 32
+    ldp       x10, x11, [x29, -80]
+    ldp       x12, x13, [x29, -96]
+    ldp       x14, x15, [x29, -112]
+    mov       sp, x29
+    ldp       x29, x30, [sp], 16
 .else
-    pop       {r4, r5, r6, r7, r8, r9, r10, ip}
+    sub       x29, x29, 64
+    ld1       {v8.8b, v9.8b, v10.8b, v11.8b}, [x29], 32
+    ld1       {v12.8b, v13.8b, v14.8b, v15.8b}, [x29], 32
+    ldp       x10, x11, [x29, -80]
+    ldp       x12, x13, [x29, -96]
+    ldp       x14, x15, [x29, -112]
+    ldr       x8, [x29, -120]
+    mov       sp, x29
+    ldp       x29, x30, [sp], 16
 .endif
-    bx        lr
+    ret
 
     .unreq    OUT
     .unreq    TOP
     .unreq    WT
+    .unreq    WWT
     .unreq    WB
+    .unreq    WWB
     .unreq    X
     .unreq    UX
     .unreq    WIDTH
     .unreq    TMP1
+    .unreq    WTMP1
     .unreq    TMP2
     .unreq    PF_OFFS
     .unreq    TMP3
@@ -884,158 +1013,184 @@ pixman_asm_function fname
 .endm
 
 .macro bilinear_over_8888_8888_process_pixblock_head
-    mov         TMP1, X, asr #16
+    asr         WTMP1, X, #16
     add         X, X, UX
-    add         TMP1, TOP, TMP1, asl #2
-    mov         TMP2, X, asr #16
+    lsl         TMP2, TMP1, #2
+    add         TMP1, TOP, TMP2
+    asr         WTMP2, X, #16
     add         X, X, UX
-    add         TMP2, TOP, TMP2, asl #2
+    lsl         TMP3, TMP2, #2
+    add         TMP2, TOP, TMP3
 
-    vld1.32     {d22}, [TMP1], STRIDE
-    vld1.32     {d23}, [TMP1]
-    mov         TMP3, X, asr #16
+    ld1         {v22.2s}, [TMP1], STRIDE
+    ld1         {v23.2s}, [TMP1]
+    asr         WTMP3, X, #16
     add         X, X, UX
-    add         TMP3, TOP, TMP3, asl #2
-    vmull.u8    q8, d22, d28
-    vmlal.u8    q8, d23, d29
+    lsl         TMP4, TMP3, #2
+    add         TMP3, TOP, TMP4
+    umull       v16.8h, v22.8b, v28.8b
+    umlal       v16.8h, v23.8b, v29.8b
+    mov         v17.d[0], v16.d[1]
 
-    vld1.32     {d22}, [TMP2], STRIDE
-    vld1.32     {d23}, [TMP2]
-    mov         TMP4, X, asr #16
+    ld1         {v22.2s}, [TMP2], STRIDE
+    ld1         {v23.2s}, [TMP2]
+    asr         WTMP4, X, #16
     add         X, X, UX
-    add         TMP4, TOP, TMP4, asl #2
-    vmull.u8    q9, d22, d28
-    vmlal.u8    q9, d23, d29
+    lsl         TMP1, TMP4, #2
+    add         TMP4, TOP, TMP1
+    umull       v18.8h, v22.8b, v28.8b
+    umlal       v18.8h, v23.8b, v29.8b
+    mov         v19.d[0], v18.d[1]
 
-    vld1.32     {d22}, [TMP3], STRIDE
-    vld1.32     {d23}, [TMP3]
-    vmull.u8    q10, d22, d28
-    vmlal.u8    q10, d23, d29
+    ld1         {v22.2s}, [TMP3], STRIDE
+    ld1         {v23.2s}, [TMP3]
+    umull       v20.8h, v22.8b, v28.8b
+    umlal       v20.8h, v23.8b, v29.8b
+    mov         v21.d[0], v20.d[1]
 
-    vshll.u16   q0, d16, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16   q0, d16, d30
-    vmlal.u16   q0, d17, d30
+    ushll       v0.4s, v16.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl       v0.4s, v16.4h, v30.4h
+    umlal       v0.4s, v17.4h, v30.4h
 
-    pld         [TMP4, PF_OFFS]
-    vld1.32     {d16}, [TMP4], STRIDE
-    vld1.32     {d17}, [TMP4]
-    pld         [TMP4, PF_OFFS]
-    vmull.u8    q11, d16, d28
-    vmlal.u8    q11, d17, d29
+    prfm        PLDL2STRM, [TMP4, PF_OFFS]
+    ld1         {v16.2s}, [TMP4], STRIDE
+    ld1         {v17.2s}, [TMP4]
+    prfm        PLDL2STRM, [TMP4, PF_OFFS]
+    umull       v22.8h, v16.8b, v28.8b
+    umlal       v22.8h, v17.8b, v29.8b
+    mov         v23.d[0], v22.d[1]
 
-    vshll.u16   q1, d18, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16   q1, d18, d31
-    vmlal.u16   q1, d19, d31
-    vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vadd.u16    q12, q12, q13
+    ushll       v1.4s, v18.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl       v1.4s, v18.4h, v31.4h
+    umlal       v1.4s, v19.4h, v31.4h
+    ushr        v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov         v31.d[0], v30.d[1]
+    add         v12.8h, v12.8h, v13.8h
 .endm
 
 .macro bilinear_over_8888_8888_process_pixblock_tail
-    vshll.u16   q2, d20, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16   q2, d20, d30
-    vmlal.u16   q2, d21, d30
-    vshll.u16   q3, d22, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16   q3, d22, d31
-    vmlal.u16   q3, d23, d31
-    vshrn.u32   d0, q0, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32   d1, q1, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vld1.32     {d2, d3}, [OUT, :128]
-    pld         [OUT, #(prefetch_offset * 4)]
-    vshrn.u32   d4, q2, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32   d5, q3, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vmovn.u16   d6, q0
-    vmovn.u16   d7, q2
-    vuzp.8      d6, d7
-    vuzp.8      d2, d3
-    vuzp.8      d6, d7
-    vuzp.8      d2, d3
-    vdup.32     d4, d7[1]
-    vmvn.8      d4, d4
-    vmull.u8    q11, d2, d4
-    vmull.u8    q2, d3, d4
-    vrshr.u16   q1, q11, #8
-    vrshr.u16   q10, q2, #8
-    vraddhn.u16 d2, q1, q11
-    vraddhn.u16 d3, q10, q2
-    vqadd.u8    q3, q1, q3
-    vuzp.8      d6, d7
-    vuzp.8      d6, d7
-    vadd.u16    q12, q12, q13
-    vst1.32     {d6, d7}, [OUT, :128]!
+    ushll       v2.4s, v20.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl       v2.4s, v20.4h, v30.4h
+    umlal       v2.4s, v21.4h, v30.4h
+    ushll       v3.4s, v22.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl       v3.4s, v22.4h, v31.4h
+    umlal       v3.4s, v23.4h, v31.4h
+    shrn        v0.4h, v0.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    shrn        v1.4h, v1.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    mov         v0.d[1], v1.d[0]
+    ld1         {v22.2s, v23.2s}, [OUT]
+    prfm        PLDL2STRM, [OUT, #(prefetch_offset * 4)]
+    shrn        v2.4h, v2.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    ushr        v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov         v31.d[0], v30.d[1]
+    shrn        v5.4h, v3.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+    mov         v2.d[1], v5.d[0]
+    xtn         v6.8b, v0.8h
+    xtn         v7.8b, v2.8h
+    vuzp        v6.8b, v7.8b
+    vuzp        v22.8b, v23.8b
+    vuzp        v6.8b, v7.8b
+    vuzp        v22.8b, v23.8b
+    dup         v4.2s, v7.s[1]
+    mvn         v4.8b, v4.8b
+    umull       v11.8h, v22.8b, v4.8b
+    umull       v2.8h,  v23.8b, v4.8b
+    urshr       v1.8h, v11.8h, #8
+    urshr       v10.8h, v2.8h, #8
+    raddhn      v3.8b, v10.8h, v2.8h
+    raddhn      v2.8b, v1.8h, v11.8h
+    uqadd       v6.8b, v2.8b,  v6.8b
+    uqadd       v7.8b, v3.8b,  v7.8b
+    vuzp        v6.8b, v7.8b
+    vuzp        v6.8b, v7.8b
+    add         v12.8h, v12.8h, v13.8h
+    st1         {v6.2s, v7.2s}, [OUT], #16
 .endm
 
 .macro bilinear_over_8888_8888_process_pixblock_tail_head
-                                            vshll.u16   q2, d20, #BILINEAR_INTERPOLATION_BITS
-    mov         TMP1, X, asr #16
+                                            ushll       v2.4s, v20.4h, #BILINEAR_INTERPOLATION_BITS
+    asr         WTMP1, X, #16
     add         X, X, UX
-    add         TMP1, TOP, TMP1, asl #2
-                                            vmlsl.u16   q2, d20, d30
-    mov         TMP2, X, asr #16
+    lsl         TMP2, TMP1, #2
+    add         TMP1, TOP, TMP2
+                                            umlsl       v2.4s, v20.4h, v30.4h
+    asr         WTMP2, X, #16
     add         X, X, UX
-    add         TMP2, TOP, TMP2, asl #2
-                                            vmlal.u16   q2, d21, d30
-                                            vshll.u16   q3, d22, #BILINEAR_INTERPOLATION_BITS
-    vld1.32     {d20}, [TMP1], STRIDE
-                                            vmlsl.u16   q3, d22, d31
-                                            vmlal.u16   q3, d23, d31
-    vld1.32     {d21}, [TMP1]
-    vmull.u8    q8, d20, d28
-    vmlal.u8    q8, d21, d29
-                                            vshrn.u32   d0, q0, #(2 * BILINEAR_INTERPOLATION_BITS)
-                                            vshrn.u32   d1, q1, #(2 * BILINEAR_INTERPOLATION_BITS)
-                                            vld1.32     {d2, d3}, [OUT, :128]
-                                            pld         [OUT, PF_OFFS]
-                                            vshrn.u32   d4, q2, #(2 * BILINEAR_INTERPOLATION_BITS)
-                                            vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vld1.32     {d22}, [TMP2], STRIDE
-                                            vshrn.u32   d5, q3, #(2 * BILINEAR_INTERPOLATION_BITS)
-                                            vmovn.u16   d6, q0
-    vld1.32     {d23}, [TMP2]
-    vmull.u8    q9, d22, d28
-    mov         TMP3, X, asr #16
+    lsl         TMP3, TMP2, #2
+    add         TMP2, TOP, TMP3
+                                            umlal       v2.4s, v21.4h, v30.4h
+                                            ushll       v3.4s, v22.4h, #BILINEAR_INTERPOLATION_BITS
+    ld1         {v20.2s}, [TMP1], STRIDE
+                                            umlsl       v3.4s, v22.4h, v31.4h
+                                            umlal       v3.4s, v23.4h, v31.4h
+    ld1         {v21.2s}, [TMP1]
+    umull       v16.8h, v20.8b, v28.8b
+    umlal       v16.8h, v21.8b, v29.8b
+    mov         v17.d[0], v16.d[1]
+                                            shrn        v0.4h, v0.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+                                            shrn        v1.4h, v1.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+                                            mov         v0.d[1], v1.d[0]
+                                            shrn        v2.4h, v2.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+                                            ushr        v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+                                            mov         v31.d[0], v30.d[1]
+    ld1         {v22.2s}, [TMP2], STRIDE
+                                            shrn        v5.4h, v3.4s, #(2 * BILINEAR_INTERPOLATION_BITS)
+                                            mov         v2.d[1], v5.d[0]
+                                            xtn         v6.8b, v0.8h
+    ld1         {v23.2s}, [TMP2]
+    umull       v18.8h, v22.8b, v28.8b
+    asr         WTMP3, X, #16
     add         X, X, UX
-    add         TMP3, TOP, TMP3, asl #2
-    mov         TMP4, X, asr #16
+    lsl         TMP4, TMP3, #2
+    add         TMP3, TOP, TMP4
+    asr         WTMP4, X, #16
     add         X, X, UX
-    add         TMP4, TOP, TMP4, asl #2
-    vmlal.u8    q9, d23, d29
-                                            vmovn.u16   d7, q2
-    vld1.32     {d22}, [TMP3], STRIDE
-                                            vuzp.8      d6, d7
-                                            vuzp.8      d2, d3
-                                            vuzp.8      d6, d7
-                                            vuzp.8      d2, d3
-                                            vdup.32     d4, d7[1]
-    vld1.32     {d23}, [TMP3]
-                                            vmvn.8      d4, d4
-    vmull.u8    q10, d22, d28
-    vmlal.u8    q10, d23, d29
-                                            vmull.u8    q11, d2, d4
-                                            vmull.u8    q2, d3, d4
-    vshll.u16   q0, d16, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16   q0, d16, d30
-                                            vrshr.u16   q1, q11, #8
-    vmlal.u16   q0, d17, d30
-                                            vrshr.u16   q8, q2, #8
-                                            vraddhn.u16 d2, q1, q11
-                                            vraddhn.u16 d3, q8, q2
-    pld         [TMP4, PF_OFFS]
-    vld1.32     {d16}, [TMP4], STRIDE
-                                            vqadd.u8    q3, q1, q3
-    vld1.32     {d17}, [TMP4]
-    pld         [TMP4, PF_OFFS]
-    vmull.u8    q11, d16, d28
-    vmlal.u8    q11, d17, d29
-                                            vuzp.8      d6, d7
-    vshll.u16   q1, d18, #BILINEAR_INTERPOLATION_BITS
-                                            vuzp.8      d6, d7
-    vmlsl.u16   q1, d18, d31
-                                            vadd.u16    q12, q12, q13
-    vmlal.u16   q1, d19, d31
-    vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vadd.u16    q12, q12, q13
-                                            vst1.32     {d6, d7}, [OUT, :128]!
+    lsl         TMP1, TMP4, #2
+    add         TMP4, TOP, TMP1
+    umlal       v18.8h, v23.8b, v29.8b
+    mov         v19.d[0], v18.d[1]
+                                            xtn         v7.8b, v2.8h
+                                            ld1         {v2.2s, v3.2s}, [OUT]
+                                            prfm        PLDL2STRM, [OUT, PF_OFFS]
+    ld1         {v22.2s}, [TMP3], STRIDE
+                                            vuzp        v6.8b, v7.8b
+                                            vuzp        v2.8b, v3.8b
+                                            vuzp        v6.8b, v7.8b
+                                            vuzp        v2.8b, v3.8b
+                                            dup         v4.2s, v7.s[1]
+    ld1         {v23.2s}, [TMP3]
+                                            mvn         v4.8b, v4.8b
+    umull       v20.8h, v22.8b, v28.8b
+    umlal       v20.8h, v23.8b, v29.8b
+                                            umull       v11.8h, v2.8b, v4.8b
+                                            umull        v2.8h, v3.8b, v4.8b
+    mov         v21.d[0], v20.d[1]
+    ushll       v0.4s, v16.4h, #BILINEAR_INTERPOLATION_BITS
+    umlsl       v0.4s, v16.4h, v30.4h
+                                            urshr       v1.8h, v11.8h, #8
+    umlal       v0.4s, v17.4h, v30.4h
+                                            urshr       v8.8h, v2.8h, #8
+                                            raddhn      v3.8b, v8.8h, v2.8h
+                                            raddhn      v2.8b, v1.8h, v11.8h
+    prfm        PLDL2STRM, [TMP4, PF_OFFS]
+    ld1         {v16.2s}, [TMP4], STRIDE
+                                            uqadd       v6.8b, v2.8b, v6.8b
+                                            uqadd       v7.8b, v3.8b, v7.8b
+    ld1         {v17.2s}, [TMP4]
+    prfm        PLDL2STRM, [TMP4, PF_OFFS]
+    umull       v22.8h, v16.8b, v28.8b
+    umlal       v22.8h, v17.8b, v29.8b
+    mov         v23.d[0], v22.d[1]
+                                            vuzp        v6.8b, v7.8b
+    ushll       v1.4s, v18.4h, #BILINEAR_INTERPOLATION_BITS
+                                            vuzp        v6.8b, v7.8b
+    umlsl       v1.4s, v18.4h, v31.4h
+                                            add         v12.8h, v12.8h, v13.8h
+    umlal       v1.4s, v19.4h, v31.4h
+    ushr        v30.8h, v12.8h, #(16 - BILINEAR_INTERPOLATION_BITS)
+    mov         v31.d[0], v30.d[1]
+    add         v12.8h, v12.8h, v13.8h
+                                            st1         {v6.2s, v7.2s}, [OUT], #16
 .endm
 
 /* over_8888_8_8888 */
@@ -1048,173 +1203,20 @@ pixman_asm_function fname
 .endm
 
 .macro bilinear_over_8888_8_8888_process_four_pixels
-    bilinear_interpolate_four_pixels 8888, 8, 8888, over
+    bilinear_interpolate_two_pixels 8888, 8, 8888, over
+    bilinear_interpolate_two_pixels 8888, 8, 8888, over
 .endm
 
 .macro bilinear_over_8888_8_8888_process_pixblock_head
-    mov         TMP1, X, asr #16
-    add         X, X, UX
-    add         TMP1, TOP, TMP1, asl #2
-    vld1.32     {d0}, [TMP1], STRIDE
-    mov         TMP2, X, asr #16
-    add         X, X, UX
-    add         TMP2, TOP, TMP2, asl #2
-    vld1.32     {d1}, [TMP1]
-    mov         TMP3, X, asr #16
-    add         X, X, UX
-    add         TMP3, TOP, TMP3, asl #2
-    vld1.32     {d2}, [TMP2], STRIDE
-    mov         TMP4, X, asr #16
-    add         X, X, UX
-    add         TMP4, TOP, TMP4, asl #2
-    vld1.32     {d3}, [TMP2]
-    vmull.u8    q2, d0, d28
-    vmull.u8    q3, d2, d28
-    vmlal.u8    q2, d1, d29
-    vmlal.u8    q3, d3, d29
-    vshll.u16   q0, d4, #BILINEAR_INTERPOLATION_BITS
-    vshll.u16   q1, d6, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16   q0, d4, d30
-    vmlsl.u16   q1, d6, d31
-    vmlal.u16   q0, d5, d30
-    vmlal.u16   q1, d7, d31
-    vshrn.u32   d0, q0, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32   d1, q1, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vld1.32     {d2}, [TMP3], STRIDE
-    vld1.32     {d3}, [TMP3]
-    pld         [TMP4, PF_OFFS]
-    vld1.32     {d4}, [TMP4], STRIDE
-    vld1.32     {d5}, [TMP4]
-    pld         [TMP4, PF_OFFS]
-    vmull.u8    q3, d2, d28
-    vmlal.u8    q3, d3, d29
-    vmull.u8    q1, d4, d28
-    vmlal.u8    q1, d5, d29
-    vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vld1.32     {d22[0]}, [MASK]!
-    pld         [MASK, #prefetch_offset]
-    vadd.u16    q12, q12, q13
-    vmovn.u16   d16, q0
+    bilinear_over_8888_8_8888_process_four_pixels
 .endm
 
 .macro bilinear_over_8888_8_8888_process_pixblock_tail
-    vshll.u16   q9, d6, #BILINEAR_INTERPOLATION_BITS
-    vshll.u16   q10, d2, #BILINEAR_INTERPOLATION_BITS
-    vmlsl.u16   q9, d6, d30
-    vmlsl.u16   q10, d2, d31
-    vmlal.u16   q9, d7, d30
-    vmlal.u16   q10, d3, d31
-    vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-    vadd.u16    q12, q12, q13
-    vdup.32     d22, d22[0]
-    vshrn.u32   d18, q9, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32   d19, q10, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vmovn.u16   d17, q9
-    vld1.32     {d18, d19}, [OUT, :128]
-    pld         [OUT, PF_OFFS]
-    vuzp.8      d16, d17
-    vuzp.8      d18, d19
-    vuzp.8      d16, d17
-    vuzp.8      d18, d19
-    vmull.u8    q10, d16, d22
-    vmull.u8    q11, d17, d22
-    vrsra.u16   q10, q10, #8
-    vrsra.u16   q11, q11, #8
-    vrshrn.u16  d16, q10, #8
-    vrshrn.u16  d17, q11, #8
-    vdup.32     d22, d17[1]
-    vmvn.8      d22, d22
-    vmull.u8    q10, d18, d22
-    vmull.u8    q11, d19, d22
-    vrshr.u16   q9, q10, #8
-    vrshr.u16   q0, q11, #8
-    vraddhn.u16 d18, q9, q10
-    vraddhn.u16 d19, q0, q11
-    vqadd.u8    q9, q8, q9
-    vuzp.8      d18, d19
-    vuzp.8      d18, d19
-    vst1.32     {d18, d19}, [OUT, :128]!
 .endm
 
 .macro bilinear_over_8888_8_8888_process_pixblock_tail_head
-                                            vshll.u16   q9, d6, #BILINEAR_INTERPOLATION_BITS
-    mov         TMP1, X, asr #16
-    add         X, X, UX
-    add         TMP1, TOP, TMP1, asl #2
-                                            vshll.u16   q10, d2, #BILINEAR_INTERPOLATION_BITS
-    vld1.32     {d0}, [TMP1], STRIDE
-    mov         TMP2, X, asr #16
-    add         X, X, UX
-    add         TMP2, TOP, TMP2, asl #2
-                                            vmlsl.u16   q9, d6, d30
-                                            vmlsl.u16   q10, d2, d31
-    vld1.32     {d1}, [TMP1]
-    mov         TMP3, X, asr #16
-    add         X, X, UX
-    add         TMP3, TOP, TMP3, asl #2
-                                            vmlal.u16   q9, d7, d30
-                                            vmlal.u16   q10, d3, d31
-    vld1.32     {d2}, [TMP2], STRIDE
-    mov         TMP4, X, asr #16
-    add         X, X, UX
-    add         TMP4, TOP, TMP4, asl #2
-                                            vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-                                            vadd.u16    q12, q12, q13
-    vld1.32     {d3}, [TMP2]
-                                            vdup.32     d22, d22[0]
-                                            vshrn.u32   d18, q9, #(2 * BILINEAR_INTERPOLATION_BITS)
-                                            vshrn.u32   d19, q10, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vmull.u8    q2, d0, d28
-    vmull.u8    q3, d2, d28
-                                            vmovn.u16   d17, q9
-                                            vld1.32     {d18, d19}, [OUT, :128]
-                                            pld         [OUT, #(prefetch_offset * 4)]
-    vmlal.u8    q2, d1, d29
-    vmlal.u8    q3, d3, d29
-                                            vuzp.8      d16, d17
-                                            vuzp.8      d18, d19
-    vshll.u16   q0, d4, #BILINEAR_INTERPOLATION_BITS
-    vshll.u16   q1, d6, #BILINEAR_INTERPOLATION_BITS
-                                            vuzp.8      d16, d17
-                                            vuzp.8      d18, d19
-    vmlsl.u16   q0, d4, d30
-    vmlsl.u16   q1, d6, d31
-                                            vmull.u8    q10, d16, d22
-                                            vmull.u8    q11, d17, d22
-    vmlal.u16   q0, d5, d30
-    vmlal.u16   q1, d7, d31
-                                            vrsra.u16   q10, q10, #8
-                                            vrsra.u16   q11, q11, #8
-    vshrn.u32   d0, q0, #(2 * BILINEAR_INTERPOLATION_BITS)
-    vshrn.u32   d1, q1, #(2 * BILINEAR_INTERPOLATION_BITS)
-                                            vrshrn.u16  d16, q10, #8
-                                            vrshrn.u16  d17, q11, #8
-    vld1.32     {d2}, [TMP3], STRIDE
-                                            vdup.32     d22, d17[1]
-    vld1.32     {d3}, [TMP3]
-                                            vmvn.8      d22, d22
-    pld         [TMP4, PF_OFFS]
-    vld1.32     {d4}, [TMP4], STRIDE
-                                            vmull.u8    q10, d18, d22
-                                            vmull.u8    q11, d19, d22
-    vld1.32     {d5}, [TMP4]
-    pld         [TMP4, PF_OFFS]
-    vmull.u8    q3, d2, d28
-                                            vrshr.u16   q9, q10, #8
-                                            vrshr.u16   q15, q11, #8
-    vmlal.u8    q3, d3, d29
-    vmull.u8    q1, d4, d28
-                                            vraddhn.u16 d18, q9, q10
-                                            vraddhn.u16 d19, q15, q11
-    vmlal.u8    q1, d5, d29
-    vshr.u16    q15, q12, #(16 - BILINEAR_INTERPOLATION_BITS)
-                                            vqadd.u8    q9, q8, q9
-    vld1.32     {d22[0]}, [MASK]!
-                                            vuzp.8      d18, d19
-    vadd.u16    q12, q12, q13
-                                            vuzp.8      d18, d19
-    vmovn.u16   d16, q0
-                                            vst1.32     {d18, d19}, [OUT, :128]!
+     bilinear_over_8888_8_8888_process_pixblock_tail
+     bilinear_over_8888_8_8888_process_pixblock_head
 .endm
 
 /* add_8888_8888 */
@@ -1227,7 +1229,8 @@ pixman_asm_function fname
 .endm
 
 .macro bilinear_add_8888_8888_process_four_pixels
-    bilinear_interpolate_four_pixels 8888, x, 8888, add
+    bilinear_interpolate_two_pixels 8888, x, 8888, add
+    bilinear_interpolate_two_pixels 8888, x, 8888, add
 .endm
 
 .macro bilinear_add_8888_8888_process_pixblock_head
